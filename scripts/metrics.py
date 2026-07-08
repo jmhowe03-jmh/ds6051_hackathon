@@ -1,7 +1,5 @@
 import difflib
 import re
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 # ---------------------------------------------------------------------------
@@ -36,32 +34,42 @@ def split_metadata_body(composite: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-# def char_similarity(a: str, b: str) -> float:
-#     """Character-level similarity ratio (0–1) via difflib."""
-#     return difflib.SequenceMatcher(None, a, b).ratio()
+def char_similarity(a: str, b: str) -> float:
+    """Character-level similarity ratio (0–1) via difflib."""
+    return difflib.SequenceMatcher(None, a, b).ratio()
 
 
-# _tfidf_vectorizer = TfidfVectorizer(stop_words="english")
+def tfidf_similarity(original: str, improved: str) -> float:
+    """TF-IDF cosine similarity (0–1) between two texts.
+
+    scikit-learn is imported lazily so the rest of this module still works even
+    if scikit-learn isn't installed.
+    """
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+    except ImportError as e:
+        raise ImportError(
+            "tfidf_similarity requires scikit-learn. Install it with "
+            "`uv add scikit-learn` or `pip install scikit-learn`."
+        ) from e
+
+    try:
+        matrix = TfidfVectorizer(stop_words="english").fit_transform([original, improved])
+        sim = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
+        return float(sim)
+    except ValueError:
+        # Raised when the texts contain only stop words / no usable terms.
+        return 0.0
 
 
-# def tfidf_similarity(original: str, improved: str) -> float:
-#     """TF-IDF cosine similarity (0–1) between two texts."""
-#     texts = [original, improved]
-#     try:
-#         matrix = _tfidf_vectorizer.fit_transform(texts)
-#         sim = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
-#         return float(sim)
-#     except ValueError:
-#         return 0.0
+# ---------------------------------------------------------------------------
+# 3. Relevance to original topic
+# ---------------------------------------------------------------------------
 
-
-# # ---------------------------------------------------------------------------
-# # 3. Relevance to original topic
-# # ---------------------------------------------------------------------------
-
-# # Proxy: TF-IDF cosine similarity between original and improved.
-# # Higher = more topic-preserving.
-# topic_relevance = tfidf_similarity  # alias
+# Proxy: TF-IDF cosine similarity between original and improved.
+# Higher = more topic-preserving.
+topic_relevance = tfidf_similarity  # alias
 
 
 # ---------------------------------------------------------------------------
