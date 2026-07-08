@@ -12,7 +12,7 @@ processor = AutoProcessor.from_pretrained(MODEL_ID)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID,
     dtype="auto",
-    device_map="auto",
+    device_map="gpu",
 )
 model.eval()
 
