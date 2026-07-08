@@ -3,6 +3,7 @@ import pandas as pd
 from improve_email import improve_email
 from metrics import compute_metrics, rule_compliance
 import classifier
+import os
 
 MAX_PASSES = 10
 
@@ -21,7 +22,7 @@ def make_composite_email(row: dict) -> str:
 def load_dataframes() -> dict[str, pd.DataFrame]:
     data_dir = 'data'
     names = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
-    return {name: pd.read_csv(data_dir / f"{name}.csv") for name in names}
+    return {name: pd.read_csv(os.path.join(data_dir, f"{name}.csv")) for name in names}
 
 
 def main():
