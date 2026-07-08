@@ -54,6 +54,10 @@ def tfidf_similarity(original: str, improved: str) -> float:
             "`uv add scikit-learn` or `pip install scikit-learn`."
         ) from e
 
+    # Guard against non-string inputs (e.g. a parsed dict) reaching the
+    # vectorizer, which would raise AttributeError on doc.lower().
+    original, improved = str(original), str(improved)
+
     try:
         matrix = TfidfVectorizer(stop_words="english").fit_transform([original, improved])
         sim = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
