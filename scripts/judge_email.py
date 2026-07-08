@@ -17,7 +17,7 @@ JUDGE_MODEL_ID = "google/shieldgemma-2b"
 judge_tokenizer = AutoTokenizer.from_pretrained(JUDGE_MODEL_ID)
 judge_model = AutoModelForCausalLM.from_pretrained(
     JUDGE_MODEL_ID,
-    device_map="auto",
+    device_map="cuda:0",
     torch_dtype=torch.bfloat16,
 )
 
