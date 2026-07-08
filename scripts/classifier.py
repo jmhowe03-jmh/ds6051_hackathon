@@ -57,12 +57,21 @@ def main():
     parser.add_argument("--model", default=BASE_MODEL_ID, help="HF model id.")
     args = parser.parse_args()
 
-    # Load the model once.
-    print(f"Loading {args.model} ...")
+    # Require a GPU — fail loudly instead of silently crawling on the CPU.
+    if not torch.cuda.is_available():
+        raise SystemExit(
+            "ERROR: No CUDA GPU visible to PyTorch. This script requires a GPU.\n"
+            "  - On Rivanna, make sure your srun job requested --gres=gpu:1.\n"
+            "  - Check with: nvidia-smi  and  python -c \"import torch; print(torch.cuda.is_available())\""
+        )
+
+    # Load the model once, pinned to the GPU.
+    print(f"Loading {args.model} on GPU ({torch.cuda.get_device_name(0)}) ...")
     processor = AutoProcessor.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(args.model, dtype="auto", device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(args.model, dtype="auto", device_map="cuda:0")
     model.eval()
     print(f"Model on device: {model.device}")
+    assert model.device.type == "cuda", f"Model landed on {model.device}, not the GPU"
 
     # First token id of the two candidate answer words (leading space).
     tok = getattr(processor, "tokenizer", processor)
