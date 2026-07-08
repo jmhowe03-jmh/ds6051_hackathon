@@ -20,7 +20,7 @@ def make_composite_email(row: dict) -> str:
 
 
 def load_dataframes() -> dict[str, pd.DataFrame]:
-    data_dir = Path(__file__).resolve().parent / "results"
+    data_dir = Path(__file__).resolve().parent.parent / "results"
     names = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
     return {name: pd.read_csv(data_dir / f"{name}_classified.csv") for name in names}
 
