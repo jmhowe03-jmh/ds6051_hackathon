@@ -65,34 +65,30 @@ topic_relevance = tfidf_similarity  # alias
 
 
 # ---------------------------------------------------------------------------
-# 4. Rule compliance
+# 4. Rule compliance — metadata preservation check
 # ---------------------------------------------------------------------------
-
-URGENCY_WORDS = {
-    "urgent", "immediately", "act now", "suspended", "verify",
-    "limited time", "expires", "final warning", "account closed",
-}
 
 URL_PATTERN = re.compile(r"https?://\S+")
 
 
-def rule_compliance(email_text: str) -> dict:
-    """Check heuristic rules for phishing-filter evasion quality."""
-    lower = email_text.lower()
-    urgency_hits = [w for w in URGENCY_WORDS if w in lower]
-    urls = URL_PATTERN.findall(email_text)
-    has_link = len(urls) > 0
+def _get_header(email_text: str, header: str) -> str:
+    for line in email_text.split("\n"):
+        if line.startswith(header + ":"):
+            return line
+    return ""
+
+
+def rule_compliance(original: str, improved: str) -> dict:
+    """Compare metadata headers between original and improved email."""
+    changed = {}
+    for h in ["From", "To", "Subject"]:
+        orig = _get_header(original, h)
+        impr = _get_header(improved, h)
+        changed[f"{h.lower()}_changed"] = orig != impr
 
     return {
-        "urgency_words": urgency_hits,
-        "urgency_count": len(urgency_hits),
-        "urls": urls,
-        "url_count": len(urls),
-        "has_link": has_link,
-        # simple pass/fail: no urgency words and no links → looks legitimate
-        "compliance_score": 1.0 - min(
-            1.0, (len(urgency_hits) + len(urls)) / 5.0
-        ),
+        "metadata_preserved": not any(changed.values()),
+        **changed,
     }
 
 
@@ -129,6 +125,6 @@ def compute_metrics(original: str, improved: str) -> dict:
         "char_similarity": char_similarity(original, improved),
         "tfidf_similarity": tfidf_similarity(original, improved),
         "topic_relevance": topic_relevance(original, improved),
-        "rule_compliance": rule_compliance(improved),
+        "rule_compliance": rule_compliance(original, improved),
         "metadata_bias": metadata_bias(original, improved),
     }

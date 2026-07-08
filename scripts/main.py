@@ -1,7 +1,7 @@
 import pandas as pd
 
 from improve_email import improve_email
-from metrics import compute_metrics
+from metrics import compute_metrics, rule_compliance
 from pull_data import ensure_data
 import classifier
 
@@ -42,6 +42,7 @@ def main():
                 passes += 1
                 improved = improve_email(email)
                 metrics = compute_metrics(email, improved)
+                compliance = rule_compliance(original_email, improved)
                 success = classifier.classify(improved) != "1:phishing"
                 results.append({
                     "source": name,
@@ -50,6 +51,7 @@ def main():
                     "improved": improved,
                     "success": success,
                     **metrics,
+                    **compliance,
                 })
                 email = improved
 
