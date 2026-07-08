@@ -24,10 +24,17 @@ def make_composite_email(row: dict) -> str:
     )
 
 
+# Proof of concept: only process the first N rows of each dataset.
+N_ROWS = 2
+
+
 def load_dataframes() -> dict[str, pd.DataFrame]:
     data_dir = Path(__file__).resolve().parent.parent / "results"
     names = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
-    return {name: pd.read_csv(data_dir / f"{name}_classified.csv") for name in names}
+    return {
+        name: pd.read_csv(data_dir / f"{name}_classified.csv").head(N_ROWS)
+        for name in names
+    }
 
 
 def main():
