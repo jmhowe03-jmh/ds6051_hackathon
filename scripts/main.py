@@ -2,7 +2,6 @@ import pandas as pd
 
 from improve_email import improve_email
 from metrics import compute_metrics, rule_compliance
-from pull_data import ensure_data
 import classifier
 
 MAX_PASSES = 10
