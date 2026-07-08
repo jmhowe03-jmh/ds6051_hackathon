@@ -63,6 +63,9 @@ def main():
                     **metrics,
                     **compliance,
                 })
+                print("Original:", email)
+                print("Improved:", improved)
+
                 email = improved
     
 
