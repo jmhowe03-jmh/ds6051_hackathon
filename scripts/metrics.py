@@ -36,9 +36,9 @@ def split_metadata_body(composite: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def char_similarity(a: str, b: str) -> float:
-    """Character-level similarity ratio (0–1) via difflib."""
-    return difflib.SequenceMatcher(None, a, b).ratio()
+# def char_similarity(a: str, b: str) -> float:
+#     """Character-level similarity ratio (0–1) via difflib."""
+#     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
 _tfidf_vectorizer = TfidfVectorizer(stop_words="english")
@@ -122,7 +122,7 @@ def metadata_bias(original: str, improved: str) -> dict:
 def compute_metrics(original: str, improved: str) -> dict:
     """Compute all metrics between an original and improved email."""
     return {
-        "char_similarity": char_similarity(original, improved),
+        # "char_similarity": char_similarity(original, improved),
         "tfidf_similarity": tfidf_similarity(original, improved),
         "topic_relevance": topic_relevance(original, improved),
         "rule_compliance": rule_compliance(original, improved),
