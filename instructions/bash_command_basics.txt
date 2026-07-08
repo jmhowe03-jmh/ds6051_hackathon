@@ -3,9 +3,14 @@
 
 #Connect to Rivanna via command line/VSCode:
 
-ssh -Y <computing_id>@login.hpc.virginia.edu
+ssh -Y vxx4kn@login.hpc.virginia.edu
 
 srun -A ds6051-summer -p interactive --time=6:00:00 --mem=24G --reservation=ds6051-summer-hackathon --gres=gpu:1 --pty bash
+
+
+squeue -u $USER
+# ST/ PD = Pending
+# R = running
 
 
 

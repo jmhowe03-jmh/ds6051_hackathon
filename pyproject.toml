@@ -12,4 +12,6 @@ dependencies = [
     "torch>=2.12.1",
     "torchvision>=0.24.0",
     "transformers>=5.13.0",
+    "pandas>=2.2.0",
+    "huggingface_hub>=0.34.0"
 ]

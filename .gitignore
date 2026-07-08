@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.out
 *.err
+.DS_Store
