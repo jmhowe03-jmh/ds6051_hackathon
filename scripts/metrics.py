@@ -41,27 +41,27 @@ def split_metadata_body(composite: str) -> tuple[str, str]:
 #     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
-_tfidf_vectorizer = TfidfVectorizer(stop_words="english")
+# _tfidf_vectorizer = TfidfVectorizer(stop_words="english")
 
 
-def tfidf_similarity(original: str, improved: str) -> float:
-    """TF-IDF cosine similarity (0–1) between two texts."""
-    texts = [original, improved]
-    try:
-        matrix = _tfidf_vectorizer.fit_transform(texts)
-        sim = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
-        return float(sim)
-    except ValueError:
-        return 0.0
+# def tfidf_similarity(original: str, improved: str) -> float:
+#     """TF-IDF cosine similarity (0–1) between two texts."""
+#     texts = [original, improved]
+#     try:
+#         matrix = _tfidf_vectorizer.fit_transform(texts)
+#         sim = cosine_similarity(matrix[0:1], matrix[1:2])[0][0]
+#         return float(sim)
+#     except ValueError:
+#         return 0.0
 
 
-# ---------------------------------------------------------------------------
-# 3. Relevance to original topic
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # 3. Relevance to original topic
+# # ---------------------------------------------------------------------------
 
-# Proxy: TF-IDF cosine similarity between original and improved.
-# Higher = more topic-preserving.
-topic_relevance = tfidf_similarity  # alias
+# # Proxy: TF-IDF cosine similarity between original and improved.
+# # Higher = more topic-preserving.
+# topic_relevance = tfidf_similarity  # alias
 
 
 # ---------------------------------------------------------------------------
