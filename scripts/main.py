@@ -44,12 +44,13 @@ def main():
             date = row["date"]
 
             for _ in range(MAX_PASSES):
-                print("Classifying... ", end="", flush=True)
+                print("Classifying... \n", end="", flush=True)
                 if clf.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "phishing":
                     break
                 passes += 1
+                print("improving... \n", end="", flush=True)
                 improved = improve_email(email)
-                print("metrics... ", end="", flush=True)
+                print("metrics... \n", end="", flush=True)
                 metrics = compute_metrics(email, improved)
                 compliance = rule_compliance(original_email, improved)
                 success = clf.classify(subject=subject, body=improved, sender=sender, receiver=receiver, date=date) != "phishing"
