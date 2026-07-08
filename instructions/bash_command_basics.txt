@@ -12,6 +12,8 @@ squeue -u $USER
 # ST/ PD = Pending
 # R = running
 
+nvidia-smi
+
 
 
 #Create and activate virtual environment:

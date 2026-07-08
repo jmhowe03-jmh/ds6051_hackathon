@@ -25,7 +25,7 @@ def make_composite_email(row: dict) -> str:
 
 
 # Proof of concept: only process the first N rows of each dataset.
-N_ROWS = 2
+N_ROWS = 10
 
 
 def load_dataframes() -> dict[str, pd.DataFrame]:

@@ -44,11 +44,11 @@ import pandas as pd
 import torch
 from transformers import AutoProcessor, AutoModelForCausalLM
 
-BASE_MODEL_ID = "google/gemma-4-E2B"
+BASE_MODEL_ID = "google/gemma-4-E2B-it"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 DATASETS = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
-N_ROWS = 2
+N_ROWS = 10
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
