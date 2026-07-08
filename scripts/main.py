@@ -44,10 +44,12 @@ def main():
             date = row["date"]
 
             for _ in range(MAX_PASSES):
+                print("Classifying... ", end="", flush=True)
                 if clf.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "phishing":
                     break
                 passes += 1
                 improved = improve_email(email)
+                print("metrics... ", end="", flush=True)
                 metrics = compute_metrics(email, improved)
                 compliance = rule_compliance(original_email, improved)
                 success = clf.classify(subject=subject, body=improved, sender=sender, receiver=receiver, date=date) != "phishing"
@@ -61,6 +63,7 @@ def main():
                     **compliance,
                 })
                 email = improved
+    
 
             print(f"  passes={passes} {'OK' if passes < MAX_PASSES else 'FAILED'}")
 
