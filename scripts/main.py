@@ -83,7 +83,7 @@ def main():
                 email = improved
     
 
-            judge_scores = judge_email(original_email, email, model, processor)
+            judge_scores = judge_email(original_email, email)
             results.append({
                 "source": name,
                 "pass": passes,
