@@ -32,8 +32,12 @@ Results:
 
 
 Gemma (non-instruct tuned)
+
+tested 8 emails
 <img width="842" height="189" alt="Screenshot 2026-07-08 at 2 27 54 PM" src="https://github.com/user-attachments/assets/4969dcf8-fbae-4770-b096-2abb3d23eaec" />
 
 Gemma (instruct tuned)
+
+tested 40 emails
 <img width="1174" height="253" alt="Screenshot 2026-07-08 at 2 36 03 PM" src="https://github.com/user-attachments/assets/457a8a45-f85a-4589-8539-aac83beccbde" />
 
