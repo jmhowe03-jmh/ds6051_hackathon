@@ -31,19 +31,22 @@ N_ROWS = 1000
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
-def build_prompt(subject, body):
+def build_prompt(subject, body, sender, receiver, date):
     """Short prompt. Long emails are truncated to keep the forward pass fast."""
     body = str(body)[:MAX_BODY_CHARS]
     return (
+        f"From: {sender}\n"
+        f"To: {receiver} \n"
+        f"Date: {date}\n"
         f"Subject: {subject}\n"
         f"Body: {body}\n"
         f"Is this email phishing or legitimate? Answer:"
     )
 
 
-def classify(subject, body, model, processor, phishing_id, legitimate_id):
+def classify(subject, body, model, processor, sender, receiver, date, phishing_id, legitimate_id):
     """Return 'phishing' or 'not phishing' for one email (one forward pass)."""
-    prompt = build_prompt(subject, body)
+    prompt = build_prompt(subject, body, sender, receiver, date)
     inputs = processor(text=prompt, return_tensors="pt").to(model.device)
     with torch.no_grad():
         logits = model(**inputs).logits[0, -1]  # next-token logits

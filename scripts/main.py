@@ -37,8 +37,16 @@ def main():
             email = original_email
             passes = 0
 
+            row = row.to_dict()
+
+            sender = row['sender']
+            receiver = row['receiver']
+            date = row['date']
+            subject = row['subject']
+            body = row['body']
+            
             for _ in range(MAX_PASSES):
-                if classifier.classify(email) != "1:phishing":
+                if classifier.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "1:phishing":
                     break
                 passes += 1
                 improved = improve_email(email)
