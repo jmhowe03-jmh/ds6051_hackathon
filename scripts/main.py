@@ -1,6 +1,7 @@
 import pandas as pd
 
 from improve_email import improve_email
+from metrics import compute_metrics
 from pull_data import ensure_data
 import classifier
 
@@ -24,25 +25,35 @@ def load_dataframes() -> dict[str, pd.DataFrame]:
 
 def main():
     dfs = load_dataframes()
-    history = []
+    results = []
 
     for name, df in dfs.items():
         print(f"\n=== {name} ({len(df)} emails) ===")
         for _, row in df.iterrows():
-            email = make_composite_email(row.to_dict())
+            original_email = make_composite_email(row.to_dict())
+            email = original_email
             passes = 0
 
             while classifier.classify(email) == "1:phishing":
                 passes += 1
-                email = improve_email(email)
-                history.append({
+                improved = improve_email(email)
+                metrics = compute_metrics(email, improved)
+                results.append({
                     "source": name,
                     "pass": passes,
-                    "email": email,
+                    "original": original_email,
+                    "improved": improved,
+                    **metrics,
                 })
+                email = improved
 
             if passes > 0:
                 print(f"  Improved in {passes} pass(es)")
+
+    df_results = pd.DataFrame(results)
+    print(f"\n=== SUMMARY ===")
+    print(f"Total improvements: {len(df_results)}")
+    print(df_results.describe())
 
 
 if __name__ == "__main__":
