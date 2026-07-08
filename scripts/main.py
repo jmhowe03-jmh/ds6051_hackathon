@@ -1,9 +1,8 @@
 import pandas as pd
 
+from classifier import PhishingClassifier
 from improve_email import improve_email
 from metrics import compute_metrics, rule_compliance
-import classifier
-import os
 from pathlib import Path
 
 MAX_PASSES = 10
@@ -22,11 +21,12 @@ def make_composite_email(row: dict) -> str:
 
 def load_dataframes() -> dict[str, pd.DataFrame]:
     data_dir = Path(__file__).resolve().parent.parent / "results"
-    names = ["CEAS_08_classified", "Nazario_classified", "Nigerian_Fraud_classified", "SpamAssasin_classified"]
+    names = ["CEAS_08_classifed", "Nazario_classified", "Nigerian_Fraud_classified", "SpamAssasin_classified"]
     return {name: pd.read_csv(data_dir / f"{name}.csv") for name in names}
 
 
 def main():
+    clf = PhishingClassifier()
     dfs = load_dataframes()
     results = []
 
@@ -37,22 +37,20 @@ def main():
             email = original_email
             passes = 0
 
-            row = row.to_dict()
+            subject = row["subject"]
+            body = row["body"]
+            sender = row["sender"]
+            receiver = row["receiver"]
+            date = row["date"]
 
-            sender = row['sender']
-            receiver = row['receiver']
-            date = row['date']
-            subject = row['subject']
-            body = row['body']
-            
             for _ in range(MAX_PASSES):
-                if classifier.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "1:phishing":
+                if clf.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "phishing":
                     break
                 passes += 1
                 improved = improve_email(email)
                 metrics = compute_metrics(email, improved)
                 compliance = rule_compliance(original_email, improved)
-                success = classifier.classify(improved) != "1:phishing"
+                success = clf.classify(subject=subject, body=improved, sender=sender, receiver=receiver, date=date) != "phishing"
                 results.append({
                     "source": name,
                     "pass": passes,
