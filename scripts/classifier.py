@@ -42,13 +42,12 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 DATASETS = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
 
-# How many rows to randomly sample from each dataset, and the RNG seed used so
-# the same sample is drawn every run (reproducible for the results table).
-SAMPLE_SIZE = 1000
-RANDOM_SEED = 42
+# How many rows (from the top of each dataset) to classify.
+N_ROWS = 1000
 
-# Keep prompts within the model's context window: emails can be huge.
-MAX_BODY_CHARS = 2000
+# Keep prompts short: emails can be huge, and shorter prompts = faster forward
+# passes. Phishing signals are almost always in the subject + start of the body.
+MAX_BODY_CHARS = 800
 
 # In-context examples prime the base model on the output format. These are
 # short, handwritten, and generic (NOT drawn from the labelled column of the
@@ -128,33 +127,33 @@ class _Model:
         )
         self.model.eval()
 
-    def _logprob(self, prompt: str, completion: str) -> float:
-        """Length-normalized log P(completion | prompt) for the base model."""
-        torch = self.torch
-        # Leading space keeps the verdict word a clean, separate token.
-        full = prompt + " " + completion
-        full_inputs = self.processor(text=full, return_tensors="pt").to(self.model.device)
-        prompt_inputs = self.processor(text=prompt, return_tensors="pt")
+        # Pre-compute the first token id of each verdict word once. Scoring then
+        # needs just ONE forward pass per email: we read the next-token
+        # distribution after "Verdict:" and compare P("phishing") vs
+        # P("legitimate"). "phishing" and "legitimate" begin with distinct
+        # tokens, so the first token is enough to decide — no second forward
+        # pass and no per-token Python loop (the old approach did both, which is
+        # why it was ~minutes per row).
+        tok = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+        special = set(getattr(tok, "all_special_ids", []) or [])
+        self.cand_token = {}
+        for lbl, word in LABEL_WORDS.items():
+            ids = tok(" " + word, add_special_tokens=False)["input_ids"]
+            ids = [t for t in ids if t not in special]
+            self.cand_token[lbl] = ids[0]
 
-        full_ids = full_inputs["input_ids"][0]
-        prompt_len = prompt_inputs["input_ids"].shape[-1]
-        n_completion = full_ids.shape[0] - prompt_len
-        if n_completion <= 0:
-            return float("-inf")
-
-        with torch.no_grad():
-            logits = self.model(**full_inputs).logits
-        logprobs = torch.log_softmax(logits.float(), dim=-1)
-
-        # Token at position i-1 predicts token i. Sum over completion tokens.
-        total = 0.0
-        for i in range(prompt_len, full_ids.shape[0]):
-            total += logprobs[0, i - 1, full_ids[i]].item()
-        return total / n_completion  # normalize so word length doesn't bias it
+    @property
+    def device(self):
+        return self.model.device
 
     def score(self, prompt: str) -> dict:
-        """Return {label_int: normalized_logprob} for each candidate verdict."""
-        return {lbl: self._logprob(prompt, word) for lbl, word in LABEL_WORDS.items()}
+        """One forward pass; return {label_int: log P(first verdict token)}."""
+        torch = self.torch
+        inputs = self.processor(text=prompt, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            logits = self.model(**inputs).logits
+        next_logprobs = torch.log_softmax(logits[0, -1, :].float(), dim=-1)
+        return {lbl: next_logprobs[tid].item() for lbl, tid in self.cand_token.items()}
 
 
 # ----------------------------------------------------------------------------
@@ -223,19 +222,18 @@ def _print_metrics(name: str, m: dict) -> None:
     print(f"    true legit        {m['fp']:>6d}       {m['tn']:>6d}")
 
 
-def evaluate_dataset(csv_path: Path, model, sample_size=SAMPLE_SIZE,
-                     seed=RANDOM_SEED, dry_run=False) -> dict:
+def evaluate_dataset(csv_path: Path, model, n_rows=N_ROWS, dry_run=False) -> dict:
     import pandas as pd
 
     df = pd.read_csv(csv_path, engine="python", on_bad_lines="skip")
 
-    # Randomly sample `sample_size` rows (or all rows if the file is smaller).
-    n = min(sample_size, len(df))
-    df = df.sample(n=n, random_state=seed).reset_index(drop=True)
+    # Take the first `n_rows` rows of the dataset.
+    df = df.head(n_rows).reset_index(drop=True)
+    n = len(df)
 
-    print(f"\n### {csv_path.stem} — {n} sampled emails ###")
+    print(f"\n### {csv_path.stem} — classifying first {n} rows ###")
+    results = []          # "phishing" / "not phishing" per row, in order
     y_true, y_pred = [], []
-    predictions = []  # display word per sampled row, in order
     for i, (_, row) in enumerate(df.iterrows()):
         email = {
             "sender": row.get("sender", ""),
@@ -243,7 +241,7 @@ def evaluate_dataset(csv_path: Path, model, sample_size=SAMPLE_SIZE,
             "body": row.get("body", ""),
             "urls": row.get("urls", ""),
         }
-        # True label read ONLY here, for scoring — never passed into classify().
+        # True label read ONLY here, for metrics — never passed into classify().
         true = int(row["label"]) if str(row.get("label")).strip() not in ("", "nan", "None") else None
 
         if dry_run:
@@ -253,22 +251,19 @@ def evaluate_dataset(csv_path: Path, model, sample_size=SAMPLE_SIZE,
         else:
             pred = classify(email, model=model)["prediction"]
 
-        # Per-row output: "phishing" or "not phishing".
-        subj = str(email["subject"])[:60]
-        print(f"row {i:>6}: {DISPLAY_WORDS[pred]:<12} | {subj}")
-        predictions.append(DISPLAY_WORDS[pred])
+        results.append(DISPLAY_WORDS[pred])
+        print(f"row {i:>6}/{n}: {DISPLAY_WORDS[pred]:<12} | {str(email['subject'])[:60]}")
 
         if true is not None:
             y_true.append(true)
             y_pred.append(pred)
 
-    # Save the sampled rows + their prediction to results/<dataset>_sample.csv.
+    # Add the classification result column and save the dataframe to CSV.
+    df["classificaiton_result"] = results
     RESULTS_DIR.mkdir(exist_ok=True)
-    out = df.copy()
-    out["prediction"] = predictions
-    out_path = RESULTS_DIR / f"{csv_path.stem}_sample.csv"
-    out.to_csv(out_path, index=False)
-    print(f"  saved {n} rows -> {out_path}")
+    out_path = RESULTS_DIR / f"{csv_path.stem}_classified.csv"
+    df.to_csv(out_path, index=False)
+    print(f"  saved {n} classified rows -> {out_path}")
 
     m = _metrics(y_true, y_pred)
     _print_metrics(csv_path.stem, m)
@@ -278,8 +273,7 @@ def evaluate_dataset(csv_path: Path, model, sample_size=SAMPLE_SIZE,
 def main():
     parser = argparse.ArgumentParser(description="Classify emails as phishing with base Gemma.")
     parser.add_argument("--dataset", choices=DATASETS, help="Run one dataset (default: all four).")
-    parser.add_argument("--sample", type=int, default=SAMPLE_SIZE, help=f"Rows to sample per dataset (default: {SAMPLE_SIZE}).")
-    parser.add_argument("--seed", type=int, default=RANDOM_SEED, help=f"Random seed for sampling (default: {RANDOM_SEED}).")
+    parser.add_argument("--rows", type=int, default=N_ROWS, help=f"Rows from the top of each dataset (default: {N_ROWS}).")
     parser.add_argument("--dry-run", action="store_true", help="Skip the model; test the pipeline with a stub.")
     parser.add_argument("--model", default=BASE_MODEL_ID, help="HF model id for the base Gemma model.")
     args = parser.parse_args()
@@ -294,7 +288,7 @@ def main():
             print(f"[skip] {csv_path} not found")
             continue
         summary[name] = evaluate_dataset(
-            csv_path, model, sample_size=args.sample, seed=args.seed, dry_run=args.dry_run
+            csv_path, model, n_rows=args.rows, dry_run=args.dry_run
         )
 
     # Overall results table.
