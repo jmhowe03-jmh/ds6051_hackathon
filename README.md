@@ -27,7 +27,7 @@ Phase Three: Performance Evaluation
 Metric Scorecard
 - Finally, we tie it together with a metric scorecard. We track the average number of passes needed to flip a classification, the improvement rate, and the average similarity between rewritten and original emails to gauge how much content actually changed. We also assess rule compliance, checking how well the model followed our editing constraints, and test for bias toward metadata versus actual email content by modifying one component at a time and observing the effect on predictions.
 
-# METRIC SCORE CARD DISCUSSION
+METRIC SCORE CARD DISCUSSION
 
 | Metric | Results | Why it Needs to be Included for this Use Case | How it's Measured | Limitations |
 |---|---|---|---|---|
