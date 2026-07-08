@@ -10,11 +10,26 @@
 # label. Short prompt + one forward pass = fast.
 #
 # --- Use from another script -------------------------------------------------
-#   from classifier import PhishingClassifier
-#   clf = PhishingClassifier()                       # loads the model once
-#   clf.classify(subject="Verify now", body="...")   # -> "phishing"
-#   clf.classify_email({"subject": "...", "body": "..."})
+# Create the classifier ONCE (this loads the model), then call it per email.
 # The token ids are handled internally — callers only pass email text.
+#
+#   from classifier import PhishingClassifier
+#   clf = PhishingClassifier()            # loads base Gemma onto the GPU once
+#
+# 1) Pass fields individually (all optional except what you have):
+#   clf.classify(subject="Verify your account now", body="Click here ...")
+#   clf.classify(subject="Invoice", body="...", sender="a@b.com", date="...")
+#   # -> "phishing"  or  "not phishing"
+#
+# 2) Pass a whole email as a dict (subject/body/sender/receiver/date keys):
+#   email = {"subject": "...", "body": "...", "sender": "...",
+#            "receiver": "...", "date": "..."}
+#   clf.classify_email(email)
+#
+# 3) Pass a pandas row straight from a dataframe (a row supports .get too):
+#   import pandas as pd
+#   df = pd.read_csv("data/CEAS_08.csv")
+#   df["classificaiton_result"] = [clf.classify_email(row) for _, row in df.iterrows()]
 #
 # --- Run as a script ---------------------------------------------------------
 #   python classifier.py                    # all datasets, first 1000 rows each
@@ -36,28 +51,13 @@ N_ROWS = 1000
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
-<<<<<<< HEAD
 class PhishingClassifier:
     """Loads base Gemma once and classifies emails as phishing / not phishing.
-=======
-def build_prompt(subject, body, sender, receiver, date):
-    """Short prompt. Long emails are truncated to keep the forward pass fast."""
-    body = str(body)[:MAX_BODY_CHARS]
-    return (
-        f"From: {sender}\n"
-        f"To: {receiver} \n"
-        f"Date: {date}\n"
-        f"Subject: {subject}\n"
-        f"Body: {body}\n"
-        f"Is this email phishing or legitimate? Answer:"
-    )
->>>>>>> 62ea679e0590f8a39703fd38b516d78d98b83037
 
     Everything the model needs — the weights, the tokenizer, and the candidate
     token ids — is set up in __init__, so callers only supply email text.
     """
 
-<<<<<<< HEAD
     def __init__(self, model_id: str = BASE_MODEL_ID, require_gpu: bool = True):
         # Require a GPU — fail loudly instead of silently crawling on the CPU.
         if require_gpu and not torch.cuda.is_available():
@@ -82,18 +82,21 @@ def build_prompt(subject, body, sender, receiver, date):
         self.legitimate_id = tok(" legitimate", add_special_tokens=False)["input_ids"][0]
 
     @staticmethod
-    def _build_prompt(subject, body) -> str:
+    def _build_prompt(subject, body, sender="", receiver="", date="") -> str:
         """Short prompt. Long emails are truncated to keep the forward pass fast."""
         body = str(body)[:MAX_BODY_CHARS]
         return (
+            f"From: {sender}\n"
+            f"To: {receiver}\n"
+            f"Date: {date}\n"
             f"Subject: {subject}\n"
             f"Body: {body}\n"
             f"Is this email phishing or legitimate? Answer:"
         )
 
-    def classify(self, subject="", body="") -> str:
+    def classify(self, subject="", body="", sender="", receiver="", date="") -> str:
         """Classify one email. Returns 'phishing' or 'not phishing'."""
-        prompt = self._build_prompt(subject, body)
+        prompt = self._build_prompt(subject, body, sender, receiver, date)
         inputs = self.processor(text=prompt, return_tensors="pt").to(self.model.device)
         with torch.no_grad():
             logits = self.model(**inputs).logits[0, -1]  # next-token logits
@@ -102,17 +105,14 @@ def build_prompt(subject, body, sender, receiver, date):
         return "not phishing"
 
     def classify_email(self, email: dict) -> str:
-        """Convenience wrapper: classify from a dict with 'subject'/'body' keys."""
-        return self.classify(email.get("subject", ""), email.get("body", ""))
-=======
-def classify(subject, body, model, processor, sender, receiver, date, phishing_id, legitimate_id):
-    """Return 'phishing' or 'not phishing' for one email (one forward pass)."""
-    prompt = build_prompt(subject, body, sender, receiver, date)
-    inputs = processor(text=prompt, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        logits = model(**inputs).logits[0, -1]  # next-token logits
-    return "phishing" if logits[phishing_id] > logits[legitimate_id] else "not phishing"
->>>>>>> 62ea679e0590f8a39703fd38b516d78d98b83037
+        """Convenience wrapper: classify from a dict of email fields."""
+        return self.classify(
+            subject=email.get("subject", ""),
+            body=email.get("body", ""),
+            sender=email.get("sender", ""),
+            receiver=email.get("receiver", ""),
+            date=email.get("date", ""),
+        )
 
 
 def main():
@@ -134,7 +134,7 @@ def main():
         print(f"\nClassifying {len(df)} rows from {name} ...")
         results = []
         for i, row in df.iterrows():
-            results.append(clf.classify(row.get("subject", ""), row.get("body", "")))
+            results.append(clf.classify_email(row))
             if (i + 1) % 100 == 0:
                 print(f"  {i + 1}/{len(df)}")
 
