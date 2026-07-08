@@ -9,9 +9,14 @@
 # likely the next word is "phishing" vs "legitimate". Whichever wins is the
 # label. Short prompt + one forward pass = fast.
 #
-# The `label` column is never shown to the model.
+# --- Use from another script -------------------------------------------------
+#   from classifier import PhishingClassifier
+#   clf = PhishingClassifier()                       # loads the model once
+#   clf.classify(subject="Verify now", body="...")   # -> "phishing"
+#   clf.classify_email({"subject": "...", "body": "..."})
+# The token ids are handled internally — callers only pass email text.
 #
-# Usage:
+# --- Run as a script ---------------------------------------------------------
 #   python classifier.py                    # all datasets, first 1000 rows each
 #   python classifier.py --dataset CEAS_08  # just one
 #   python classifier.py --rows 100         # fewer rows (quick test)
@@ -31,23 +36,59 @@ N_ROWS = 1000
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
-def build_prompt(subject, body):
-    """Short prompt. Long emails are truncated to keep the forward pass fast."""
-    body = str(body)[:MAX_BODY_CHARS]
-    return (
-        f"Subject: {subject}\n"
-        f"Body: {body}\n"
-        f"Is this email phishing or legitimate? Answer:"
-    )
+class PhishingClassifier:
+    """Loads base Gemma once and classifies emails as phishing / not phishing.
 
+    Everything the model needs — the weights, the tokenizer, and the candidate
+    token ids — is set up in __init__, so callers only supply email text.
+    """
 
-def classify(subject, body, model, processor, phishing_id, legitimate_id):
-    """Return 'phishing' or 'not phishing' for one email (one forward pass)."""
-    prompt = build_prompt(subject, body)
-    inputs = processor(text=prompt, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        logits = model(**inputs).logits[0, -1]  # next-token logits
-    return "phishing" if logits[phishing_id] > logits[legitimate_id] else "not phishing"
+    def __init__(self, model_id: str = BASE_MODEL_ID, require_gpu: bool = True):
+        # Require a GPU — fail loudly instead of silently crawling on the CPU.
+        if require_gpu and not torch.cuda.is_available():
+            raise SystemExit(
+                "ERROR: No CUDA GPU visible to PyTorch. This requires a GPU.\n"
+                "  - On Rivanna, make sure your srun job requested --gres=gpu:1.\n"
+                "  - Check: nvidia-smi  and  python -c \"import torch; print(torch.cuda.is_available())\""
+            )
+        device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+        print(f"Loading {model_id} on {device_map} ...")
+        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id, dtype="auto", device_map=device_map
+        )
+        self.model.eval()
+        print(f"Model on device: {self.model.device}")
+
+        # Precompute, once, the first token id of each candidate answer word.
+        tok = getattr(self.processor, "tokenizer", self.processor)
+        self.phishing_id = tok(" phishing", add_special_tokens=False)["input_ids"][0]
+        self.legitimate_id = tok(" legitimate", add_special_tokens=False)["input_ids"][0]
+
+    @staticmethod
+    def _build_prompt(subject, body) -> str:
+        """Short prompt. Long emails are truncated to keep the forward pass fast."""
+        body = str(body)[:MAX_BODY_CHARS]
+        return (
+            f"Subject: {subject}\n"
+            f"Body: {body}\n"
+            f"Is this email phishing or legitimate? Answer:"
+        )
+
+    def classify(self, subject="", body="") -> str:
+        """Classify one email. Returns 'phishing' or 'not phishing'."""
+        prompt = self._build_prompt(subject, body)
+        inputs = self.processor(text=prompt, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            logits = self.model(**inputs).logits[0, -1]  # next-token logits
+        if logits[self.phishing_id] > logits[self.legitimate_id]:
+            return "phishing"
+        return "not phishing"
+
+    def classify_email(self, email: dict) -> str:
+        """Convenience wrapper: classify from a dict with 'subject'/'body' keys."""
+        return self.classify(email.get("subject", ""), email.get("body", ""))
 
 
 def main():
@@ -57,26 +98,7 @@ def main():
     parser.add_argument("--model", default=BASE_MODEL_ID, help="HF model id.")
     args = parser.parse_args()
 
-    # Require a GPU — fail loudly instead of silently crawling on the CPU.
-    if not torch.cuda.is_available():
-        raise SystemExit(
-            "ERROR: No CUDA GPU visible to PyTorch. This script requires a GPU.\n"
-            "  - On Rivanna, make sure your srun job requested --gres=gpu:1.\n"
-            "  - Check with: nvidia-smi  and  python -c \"import torch; print(torch.cuda.is_available())\""
-        )
-
-    # Load the model once, pinned to the GPU.
-    print(f"Loading {args.model} on GPU ({torch.cuda.get_device_name(0)}) ...")
-    processor = AutoProcessor.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(args.model, dtype="auto", device_map="cuda:0")
-    model.eval()
-    print(f"Model on device: {model.device}")
-    assert model.device.type == "cuda", f"Model landed on {model.device}, not the GPU"
-
-    # First token id of the two candidate answer words (leading space).
-    tok = getattr(processor, "tokenizer", processor)
-    phishing_id = tok(" phishing", add_special_tokens=False)["input_ids"][0]
-    legitimate_id = tok(" legitimate", add_special_tokens=False)["input_ids"][0]
+    clf = PhishingClassifier(args.model)
 
     datasets = [args.dataset] if args.dataset else DATASETS
     RESULTS_DIR.mkdir(exist_ok=True)
@@ -88,8 +110,7 @@ def main():
         print(f"\nClassifying {len(df)} rows from {name} ...")
         results = []
         for i, row in df.iterrows():
-            results.append(classify(row.get("subject", ""), row.get("body", ""),
-                                    model, processor, phishing_id, legitimate_id))
+            results.append(clf.classify(row.get("subject", ""), row.get("body", "")))
             if (i + 1) % 100 == 0:
                 print(f"  {i + 1}/{len(df)}")
 
