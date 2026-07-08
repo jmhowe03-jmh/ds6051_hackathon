@@ -2,6 +2,7 @@ import pandas as pd
 
 from classifier import PhishingClassifier
 from improve_email import improve_email
+from judge_email import judge_email
 from metrics import compute_metrics, rule_compliance
 from pathlib import Path
 
@@ -68,6 +69,16 @@ def main():
 
                 email = improved
     
+
+            judge_scores = judge_email(original_email, email)
+            results.append({
+                "source": name,
+                "pass": passes,
+                "original": original_email,
+                "improved": email,
+                "success": passes < MAX_PASSES,
+                **judge_scores,
+            })
 
             print(f"  passes={passes} {'OK' if passes < MAX_PASSES else 'FAILED'}")
 
