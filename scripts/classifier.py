@@ -36,13 +36,28 @@ N_ROWS = 1000
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
+<<<<<<< HEAD
 class PhishingClassifier:
     """Loads base Gemma once and classifies emails as phishing / not phishing.
+=======
+def build_prompt(subject, body, sender, receiver, date):
+    """Short prompt. Long emails are truncated to keep the forward pass fast."""
+    body = str(body)[:MAX_BODY_CHARS]
+    return (
+        f"From: {sender}\n"
+        f"To: {receiver} \n"
+        f"Date: {date}\n"
+        f"Subject: {subject}\n"
+        f"Body: {body}\n"
+        f"Is this email phishing or legitimate? Answer:"
+    )
+>>>>>>> 62ea679e0590f8a39703fd38b516d78d98b83037
 
     Everything the model needs — the weights, the tokenizer, and the candidate
     token ids — is set up in __init__, so callers only supply email text.
     """
 
+<<<<<<< HEAD
     def __init__(self, model_id: str = BASE_MODEL_ID, require_gpu: bool = True):
         # Require a GPU — fail loudly instead of silently crawling on the CPU.
         if require_gpu and not torch.cuda.is_available():
@@ -89,6 +104,15 @@ class PhishingClassifier:
     def classify_email(self, email: dict) -> str:
         """Convenience wrapper: classify from a dict with 'subject'/'body' keys."""
         return self.classify(email.get("subject", ""), email.get("body", ""))
+=======
+def classify(subject, body, model, processor, sender, receiver, date, phishing_id, legitimate_id):
+    """Return 'phishing' or 'not phishing' for one email (one forward pass)."""
+    prompt = build_prompt(subject, body, sender, receiver, date)
+    inputs = processor(text=prompt, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        logits = model(**inputs).logits[0, -1]  # next-token logits
+    return "phishing" if logits[phishing_id] > logits[legitimate_id] else "not phishing"
+>>>>>>> 62ea679e0590f8a39703fd38b516d78d98b83037
 
 
 def main():

@@ -4,6 +4,7 @@ from improve_email import improve_email
 from metrics import compute_metrics, rule_compliance
 import classifier
 import os
+from pathlib import Path
 
 MAX_PASSES = 10
 
@@ -20,9 +21,9 @@ def make_composite_email(row: dict) -> str:
 
 
 def load_dataframes() -> dict[str, pd.DataFrame]:
-    data_dir = 'data'
-    names = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
-    return {name: pd.read_csv(os.path.join(data_dir, f"{name}.csv")) for name in names}
+    data_dir = Path(__file__).resolve().parent.parent / "results"
+    names = ["CEAS_08_classified", "Nazario_classified", "Nigerian_Fraud_classified", "SpamAssasin_classified"]
+    return {name: pd.read_csv(data_dir / f"{name}.csv") for name in names}
 
 
 def main():
@@ -36,8 +37,16 @@ def main():
             email = original_email
             passes = 0
 
+            row = row.to_dict()
+
+            sender = row['sender']
+            receiver = row['receiver']
+            date = row['date']
+            subject = row['subject']
+            body = row['body']
+            
             for _ in range(MAX_PASSES):
-                if classifier.classify(email) != "1:phishing":
+                if classifier.classify(subject=subject, body=body, sender=sender, receiver=receiver, date=date) != "1:phishing":
                     break
                 passes += 1
                 improved = improve_email(email)
