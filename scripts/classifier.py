@@ -10,11 +10,12 @@
 # label. Short prompt + one forward pass = fast.
 #
 # --- Use from another script -------------------------------------------------
-# Create the classifier ONCE (this loads the model), then call it per email.
-# The token ids are handled internally — callers only pass email text.
+# Load the model ONCE, then hand it to the classifier. The token ids are
+# handled internally — callers only pass email text.
 #
-#   from classifier import PhishingClassifier
-#   clf = PhishingClassifier()            # loads base Gemma onto the GPU once
+#   from classifier import PhishingClassifier, load_base_model
+#   model, processor = load_base_model()          # one copy in GPU memory
+#   clf = PhishingClassifier(model, processor)
 #
 # 1) Pass fields individually (all optional except what you have):
 #   clf.classify(subject="Verify your account now", body="Click here ...")
@@ -51,30 +52,40 @@ N_ROWS = 2
 MAX_BODY_CHARS = 500  # keep prompts short so each classification is fast
 
 
-class PhishingClassifier:
-    """Loads base Gemma once and classifies emails as phishing / not phishing.
+def load_base_model(model_id: str = BASE_MODEL_ID, require_gpu: bool = True):
+    """Load the base Gemma model + processor ONCE and return them.
 
-    Everything the model needs — the weights, the tokenizer, and the candidate
-    token ids — is set up in __init__, so callers only supply email text.
+    Call this a single time (e.g. in main.py) and pass the returned
+    (model, processor) into PhishingClassifier, improve_email, and judge_email
+    so only one copy of the model lives in GPU memory.
+    """
+    # Require a GPU — fail loudly instead of silently crawling on the CPU.
+    if require_gpu and not torch.cuda.is_available():
+        raise SystemExit(
+            "ERROR: No CUDA GPU visible to PyTorch. This requires a GPU.\n"
+            "  - On Rivanna, make sure your srun job requested --gres=gpu:1.\n"
+            "  - Check: nvidia-smi  and  python -c \"import torch; print(torch.cuda.is_available())\""
+        )
+    device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    print(f"Loading {model_id} on {device_map} ...")
+    processor = AutoProcessor.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(model_id, dtype="auto", device_map=device_map)
+    model.eval()
+    print(f"Model on device: {model.device}")
+    return model, processor
+
+
+class PhishingClassifier:
+    """Classifies emails as phishing / not phishing using a base Gemma model.
+
+    The model + processor are loaded elsewhere (see load_base_model) and passed
+    in, so this class never loads its own copy.
     """
 
-    def __init__(self, model_id: str = BASE_MODEL_ID, require_gpu: bool = True):
-        # Require a GPU — fail loudly instead of silently crawling on the CPU.
-        if require_gpu and not torch.cuda.is_available():
-            raise SystemExit(
-                "ERROR: No CUDA GPU visible to PyTorch. This requires a GPU.\n"
-                "  - On Rivanna, make sure your srun job requested --gres=gpu:1.\n"
-                "  - Check: nvidia-smi  and  python -c \"import torch; print(torch.cuda.is_available())\""
-            )
-        device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-        print(f"Loading {model_id} on {device_map} ...")
-        self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id, dtype="auto", device_map=device_map
-        )
-        self.model.eval()
-        print(f"Model on device: {self.model.device}")
+    def __init__(self, model, processor):
+        self.model = model
+        self.processor = processor
 
         # Precompute, once, the first token id of each candidate answer word.
         tok = getattr(self.processor, "tokenizer", self.processor)
@@ -122,7 +133,8 @@ def main():
     parser.add_argument("--model", default=BASE_MODEL_ID, help="HF model id.")
     args = parser.parse_args()
 
-    clf = PhishingClassifier(args.model)
+    model, processor = load_base_model(args.model)
+    clf = PhishingClassifier(model, processor)
 
     datasets = [args.dataset] if args.dataset else DATASETS
     RESULTS_DIR.mkdir(exist_ok=True)

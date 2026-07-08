@@ -1,24 +1,18 @@
 # LLM-as-Judge for email improvement quality.
 #
-# Uses Gemma 4 (E2B-it) to score an improved email on three axes:
-#   - similarity   (how similar to the original)
-#   - compliance   (followed the evasion instructions while keeping intent)
-#   - relevance    (maintains the original topic / concept)
+# Uses the BASE (non-instruction-tuned) Gemma 4 model to score an improved email
+# on several axes, each as a percentage (0–100) extracted from the output.
 #
-# Each axis is scored as a percentage (0–100) extracted from the model output.
+# This iteration uses only google/gemma-4-E2B. Like the classifier, the judge
+# does plain text completion (no chat template / parse_response). It also does
+# NOT load its own model — the caller passes in the already-loaded base model +
+# processor so only ONE copy lives in GPU memory (avoids CUDA out-of-memory).
 
 import re
 import torch
 from transformers import AutoProcessor, AutoModelForCausalLM
 
-MODEL_ID = "google/gemma-4-E2B-it"
-
-processor = AutoProcessor.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
-    dtype="auto",
-    device_map="auto",
-)
+MODEL_ID = "google/gemma-4-E2B"
 
 CRITERIA = {
     "similarity": (
@@ -41,44 +35,31 @@ CRITERIA = {
 
 
 @torch.no_grad()
-def judge_quality(original: str, improved: str, criterion: str) -> float:
-    """Score an improved email on one criterion, returning 0–100."""
-    prompt = f"""Original email:
-{original}
-
-Improved email:
-{improved}
-
-{CRITERIA[criterion]}"""
-
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt},
-    ]
-
-    text = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
+def judge_quality(original: str, improved: str, criterion: str, model, processor) -> float:
+    """Score an improved email on one criterion (0–100) with the base model."""
+    # Base-model prompt: plain completion ending right before the number.
+    prompt = (
+        f"Original email:\n{original}\n\n"
+        f"Improved email:\n{improved}\n\n"
+        f"{CRITERIA[criterion]}\nScore:"
     )
-    inputs = processor(text=text, return_tensors="pt").to(model.device)
+
+    inputs = processor(text=prompt, return_tensors="pt").to(model.device)
     input_len = inputs["input_ids"].shape[-1]
 
-    outputs = model.generate(**inputs, max_new_tokens=20)
-    response = processor.decode(outputs[0][input_len:], skip_special_tokens=False)
-    parsed = processor.parse_response(response)
+    outputs = model.generate(**inputs, max_new_tokens=8)
+    text = processor.decode(outputs[0][input_len:], skip_special_tokens=True)
 
-    numbers = re.findall(r"\d+", parsed)
+    numbers = re.findall(r"\d+", text)
     if numbers:
         return min(float(numbers[0]), 100.0)
     return 0.0
 
 
-def judge_email(original: str, improved: str) -> dict[str, float]:
-    """Score an improved email on all three axes. Returns dict of percentages."""
+def judge_email(original: str, improved: str, model, processor) -> dict[str, float]:
+    """Score an improved email on all criteria. Returns dict of percentages."""
     return {
-        f"judge_{k}": judge_quality(original, improved, k)
+        f"judge_{k}": judge_quality(original, improved, k, model, processor)
         for k in CRITERIA
     }
 
@@ -97,7 +78,12 @@ Subject: Quick Reminder: Please Confirm Your Details
 
 We noticed some unusual activity on your account. Kindly confirm your information at your earliest convenience. Visit https://fake.com to proceed."""
 
-    scores = judge_email(original, improved)
+    # Standalone test: load the base model just for this demo run.
+    processor = AutoProcessor.from_pretrained(MODEL_ID)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype="auto", device_map="cuda:0")
+    model.eval()
+
+    scores = judge_email(original, improved, model, processor)
     for k, v in scores.items():
         print(f"{k}: {v:.1f}%")
 

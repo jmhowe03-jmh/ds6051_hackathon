@@ -3,21 +3,15 @@
 # model does plain text completion, so there is no chat template and no
 # parse_response (those are for the -it variant).
 
+# IMPORTANT: this module no longer loads its own model. The caller passes in an
+# already-loaded model + processor (e.g. the one inside PhishingClassifier), so
+# only ONE copy of the base model lives in GPU memory. Loading a second copy is
+# what caused CUDA out-of-memory on a 24 GB card.
+
 import torch
-from transformers import AutoProcessor, AutoModelForCausalLM
-
-MODEL_ID = "google/gemma-4-E2B"
-
-processor = AutoProcessor.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
-    dtype="auto",
-    device_map="cuda:0",
-)
-model.eval()
 
 
-def improve_email(phishing_email: str) -> str:
+def improve_email(phishing_email: str, model, processor, max_new_tokens: int = 256) -> str:
     # Base-model prompt: plain completion that ends right before the rewrite.
     """ You are an expert at evading phishing filters. Rewrite the following phishing email to make it harder for spam and phishing filters to detect, while keeping the malicious intent intact. Change wording, structure, and phrasing to avoid keyword-based detection. Do not include any explanation.” 
 
@@ -46,7 +40,7 @@ def improve_email(phishing_email: str) -> str:
     input_len = inputs["input_ids"].shape[-1]
 
     with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=512)
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
 
     # Base model returns plain text — decode only the newly generated tokens.
     improved = processor.decode(outputs[0][input_len:], skip_special_tokens=True)
@@ -65,7 +59,11 @@ https://fake-bank-login.example.com
 Sincerely,
 Security Team"""
 
-    improved_email = improve_email(phishing_email)
+    # Standalone test: load the model once via the shared loader.
+    from classifier import load_base_model
+    model, processor = load_base_model()
+
+    improved_email = improve_email(phishing_email, model, processor)
 
     print("=== ORIGINAL PHISHING EMAIL ===")
     print(phishing_email)
