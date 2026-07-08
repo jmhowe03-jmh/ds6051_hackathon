@@ -11,7 +11,17 @@
 import re
 import torch
 
-MODEL_ID = "google/gemma-4-E2B"
+JUDGE_MODEL_ID = "google/shieldgemma-2b"
+
+judge_tokenizer = AutoTokenizer.from_pretrained(JUDGE_MODEL_ID)
+judge_model = AutoModelForCausalLM.from_pretrained(
+    JUDGE_MODEL_ID,
+    device_map="cuda:0",
+    torch_dtype=torch.bfloat16,
+)
+
+YES_ID = judge_tokenizer.get_vocab()["Yes"]
+NO_ID = judge_tokenizer.get_vocab()["No"]
 
 CRITERIA = {
     "similarity": (
