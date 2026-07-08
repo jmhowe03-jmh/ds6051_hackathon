@@ -44,15 +44,30 @@ def load_dataframes() -> dict[str, pd.DataFrame]:
     }
 
 
-def main():
-    # ================= Phase 1: base model (classify + improve) =============
-    # Only the base gemma-4-E2B model is in GPU memory during this phase.
+# Cap text length sent to the judge. Keeps ShieldGemma's logits tensor
+# (seq_len x vocab) from ballooning on very long emails.
+JUDGE_MAX_CHARS = 3000
+
+
+def _gpu_mem(tag: str) -> None:
+    if torch.cuda.is_available():
+        alloc = torch.cuda.memory_allocated() / 1e9
+        reserved = torch.cuda.memory_reserved() / 1e9
+        print(f"[gpu] {tag}: {alloc:.2f} GB allocated, {reserved:.2f} GB reserved")
+
+
+def run_base_phase():
+    """Phase 1 — ALL base-model work lives in this function so that when it
+    returns, every reference to the base model (model, processor, clf) is
+    destroyed and the GPU memory can actually be reclaimed. Returns plain data
+    only (lists of dicts of strings/numbers) — no tensors escape this scope.
+    """
     model, processor = load_base_model()
     clf = PhishingClassifier(model, processor)
     dfs = load_dataframes()
 
     results = []
-    to_judge = []  # collected here, judged in phase 2 after the base model is freed
+    to_judge = []
 
     for name, df in dfs.items():
         print(f"\n=== {name} ({len(df)} emails) ===")
@@ -103,18 +118,33 @@ def main():
             })
             print(f"  passes={passes} {'OK' if passes < MAX_PASSES else 'FAILED'}")
 
-    # ---- Free the base model so ShieldGemma can load without OOM ----
+    # Drop references before returning (belt and suspenders alongside scope exit).
     del clf, model, processor
+    return results, to_judge
+
+
+def main():
+    # ================= Phase 1: base model (classify + improve) =============
+    _gpu_mem("start")
+    results, to_judge = run_base_phase()
+
+    # ---- Free the base model so ShieldGemma can load without OOM ----
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    _gpu_mem("after freeing base model")  # should drop to ~0 GB allocated
 
     # ================= Phase 2: ShieldGemma judge ===========================
     # Import now (this loads ShieldGemma) — the base model is already freed.
     from judge_email import judge_email
+    _gpu_mem("after loading ShieldGemma")
 
     for item in to_judge:
-        judge_scores = judge_email(item["original"], item["improved"])
+        judge_scores = judge_email(
+            item["original"][:JUDGE_MAX_CHARS],
+            item["improved"][:JUDGE_MAX_CHARS],
+        )
         results.append({**item, **judge_scores})
 
     df_results = pd.DataFrame(results)
