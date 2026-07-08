@@ -2,13 +2,20 @@ import os
 # Reduce GPU memory fragmentation (must be set before torch initializes CUDA).
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
+import gc
+
 import pandas as pd
+import torch
 
 from classifier import PhishingClassifier, load_base_model
 from improve_email import improve_email
-from judge_email import judge_email
 from metrics import compute_metrics, rule_compliance
 from pathlib import Path
+
+# NOTE: judge_email is imported LATER, inside main(), on purpose. Importing it
+# loads ShieldGemma into GPU memory immediately. We only want that AFTER the
+# base model has been freed, so the two models never sit in VRAM at once
+# (that co-residency is what caused CUDA out-of-memory on the 24 GB card).
 
 MAX_PASSES = 10
 
@@ -38,11 +45,14 @@ def load_dataframes() -> dict[str, pd.DataFrame]:
 
 
 def main():
-    # Load the model ONCE here, then pass it to every component.
+    # ================= Phase 1: base model (classify + improve) =============
+    # Only the base gemma-4-E2B model is in GPU memory during this phase.
     model, processor = load_base_model()
     clf = PhishingClassifier(model, processor)
     dfs = load_dataframes()
+
     results = []
+    to_judge = []  # collected here, judged in phase 2 after the base model is freed
 
     for name, df in dfs.items():
         print(f"\n=== {name} ({len(df)} emails) ===")
@@ -81,19 +91,31 @@ def main():
                 print("Improved:", improved)
 
                 email = improved
-    
+                body = improved  # re-classify the improved text on the next pass
 
-            judge_scores = judge_email(original_email, email)
-            results.append({
+            # Defer judging until phase 2 (needs ShieldGemma, not the base model).
+            to_judge.append({
                 "source": name,
                 "pass": passes,
                 "original": original_email,
                 "improved": email,
                 "success": passes < MAX_PASSES,
-                **judge_scores,
             })
-
             print(f"  passes={passes} {'OK' if passes < MAX_PASSES else 'FAILED'}")
+
+    # ---- Free the base model so ShieldGemma can load without OOM ----
+    del clf, model, processor
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # ================= Phase 2: ShieldGemma judge ===========================
+    # Import now (this loads ShieldGemma) — the base model is already freed.
+    from judge_email import judge_email
+
+    for item in to_judge:
+        judge_scores = judge_email(item["original"], item["improved"])
+        results.append({**item, **judge_scores})
 
     df_results = pd.DataFrame(results)
     print(f"\n=== SUMMARY ===")
