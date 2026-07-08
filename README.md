@@ -36,3 +36,6 @@ Gemma (non-instruct tuned)
 
 Gemma (instruct tuned)
 <img width="1174" height="253" alt="Screenshot 2026-07-08 at 2 36 03 PM" src="https://github.com/user-attachments/assets/457a8a45-f85a-4589-8539-aac83beccbde" />
+
+<img width="1465" height="850" alt="Screenshot 2026-07-08 at 3 33 16 PM" src="https://github.com/user-attachments/assets/06a78c03-edcb-431f-96a8-6e6a381a0522" />
+
