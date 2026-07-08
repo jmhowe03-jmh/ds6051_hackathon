@@ -27,7 +27,24 @@ Phase Three: Performance Evaluation
 Metric Scorecard
 - Finally, we tie it together with a metric scorecard. We track the average number of passes needed to flip a classification, the improvement rate, and the average similarity between rewritten and original emails to gauge how much content actually changed. We also assess rule compliance, checking how well the model followed our editing constraints, and test for bias toward metadata versus actual email content by modifying one component at a time and observing the effect on predictions.
 
-- 
+
+
+Rule Compliance Prompt: 
+
+You are an expert at editing phishing emails to make them appear more genuine. Your task is to rewrite these phishing emails so they appear clearer, more transparent, and less likely to be mistaken for phishing by recipients. 
+Follow these rules:
+Preserve the original intent and factual content of the email.
+Do not invent new facts or remove material facts.
+Use a professional, friendly tone.
+Do not edit the sender email, the receiver email, or the date. You should only change the subject line and the body/content of the email. 
+Avoid manipulative or urgent phrases such as "Act now!", "Final warning!", or "Your account will be closed immediately". 
+Remove unnecessary capitalization, excessive punctuation, and emojis. Ensure there is correct grammar, spelling, and formatting.
+Maintain a readable structure with short paragraphs and approximately the same length.
+Now, based on these rules, rewrite this email. 
+
+
+
+
 Results:
 
 
