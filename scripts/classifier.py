@@ -35,6 +35,9 @@ BASE_MODEL_ID = os.environ.get("GEMMA_BASE_MODEL", "google/gemma-4-E2B")
 # label. label 1 == phishing/spam, label 0 == legitimate (matches the CSVs).
 LABEL_WORDS = {1: "phishing", 0: "legitimate"}
 
+# How each prediction is displayed in the per-row output.
+DISPLAY_WORDS = {1: "phishing", 0: "not phishing"}
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DATASETS = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
 
@@ -179,7 +182,7 @@ def classify(email: dict, model=None) -> dict:
     pred = max(scores, key=scores.get)
     return {
         "prediction": pred,
-        "prediction_word": LABEL_WORDS[pred],
+        "prediction_word": DISPLAY_WORDS[pred],  # "phishing" | "not phishing"
         "scores": scores,
     }
 
@@ -221,8 +224,9 @@ def evaluate_dataset(csv_path: Path, model, limit=None, dry_run=False) -> dict:
     if limit is not None:
         df = df.head(limit)
 
+    print(f"\n### {csv_path.stem} — per-email predictions ###")
     y_true, y_pred = [], []
-    for _, row in df.iterrows():
+    for i, (_, row) in enumerate(df.iterrows()):
         email = {
             "sender": row.get("sender", ""),
             "subject": row.get("subject", ""),
@@ -238,6 +242,10 @@ def evaluate_dataset(csv_path: Path, model, limit=None, dry_run=False) -> dict:
             pred = 1 if any(k in text for k in ("verify", "click", "suspend", "winner", "http")) else 0
         else:
             pred = classify(email, model=model)["prediction"]
+
+        # Per-row output: "phishing" or "not phishing".
+        subj = str(email["subject"])[:60]
+        print(f"row {i:>6}: {DISPLAY_WORDS[pred]:<12} | {subj}")
 
         if true is not None:
             y_true.append(true)
