@@ -39,7 +39,13 @@ LABEL_WORDS = {1: "phishing", 0: "legitimate"}
 DISPLAY_WORDS = {1: "phishing", 0: "not phishing"}
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 DATASETS = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
+
+# How many rows to randomly sample from each dataset, and the RNG seed used so
+# the same sample is drawn every run (reproducible for the results table).
+SAMPLE_SIZE = 1000
+RANDOM_SEED = 42
 
 # Keep prompts within the model's context window: emails can be huge.
 MAX_BODY_CHARS = 2000
@@ -217,15 +223,19 @@ def _print_metrics(name: str, m: dict) -> None:
     print(f"    true legit        {m['fp']:>6d}       {m['tn']:>6d}")
 
 
-def evaluate_dataset(csv_path: Path, model, limit=None, dry_run=False) -> dict:
+def evaluate_dataset(csv_path: Path, model, sample_size=SAMPLE_SIZE,
+                     seed=RANDOM_SEED, dry_run=False) -> dict:
     import pandas as pd
 
     df = pd.read_csv(csv_path, engine="python", on_bad_lines="skip")
-    if limit is not None:
-        df = df.head(limit)
 
-    print(f"\n### {csv_path.stem} — per-email predictions ###")
+    # Randomly sample `sample_size` rows (or all rows if the file is smaller).
+    n = min(sample_size, len(df))
+    df = df.sample(n=n, random_state=seed).reset_index(drop=True)
+
+    print(f"\n### {csv_path.stem} — {n} sampled emails ###")
     y_true, y_pred = [], []
+    predictions = []  # display word per sampled row, in order
     for i, (_, row) in enumerate(df.iterrows()):
         email = {
             "sender": row.get("sender", ""),
@@ -246,10 +256,19 @@ def evaluate_dataset(csv_path: Path, model, limit=None, dry_run=False) -> dict:
         # Per-row output: "phishing" or "not phishing".
         subj = str(email["subject"])[:60]
         print(f"row {i:>6}: {DISPLAY_WORDS[pred]:<12} | {subj}")
+        predictions.append(DISPLAY_WORDS[pred])
 
         if true is not None:
             y_true.append(true)
             y_pred.append(pred)
+
+    # Save the sampled rows + their prediction to results/<dataset>_sample.csv.
+    RESULTS_DIR.mkdir(exist_ok=True)
+    out = df.copy()
+    out["prediction"] = predictions
+    out_path = RESULTS_DIR / f"{csv_path.stem}_sample.csv"
+    out.to_csv(out_path, index=False)
+    print(f"  saved {n} rows -> {out_path}")
 
     m = _metrics(y_true, y_pred)
     _print_metrics(csv_path.stem, m)
@@ -259,7 +278,8 @@ def evaluate_dataset(csv_path: Path, model, limit=None, dry_run=False) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Classify emails as phishing with base Gemma.")
     parser.add_argument("--dataset", choices=DATASETS, help="Run one dataset (default: all four).")
-    parser.add_argument("--limit", type=int, default=None, help="Max emails per dataset (default: full).")
+    parser.add_argument("--sample", type=int, default=SAMPLE_SIZE, help=f"Rows to sample per dataset (default: {SAMPLE_SIZE}).")
+    parser.add_argument("--seed", type=int, default=RANDOM_SEED, help=f"Random seed for sampling (default: {RANDOM_SEED}).")
     parser.add_argument("--dry-run", action="store_true", help="Skip the model; test the pipeline with a stub.")
     parser.add_argument("--model", default=BASE_MODEL_ID, help="HF model id for the base Gemma model.")
     args = parser.parse_args()
@@ -273,7 +293,9 @@ def main():
         if not csv_path.exists():
             print(f"[skip] {csv_path} not found")
             continue
-        summary[name] = evaluate_dataset(csv_path, model, limit=args.limit, dry_run=args.dry_run)
+        summary[name] = evaluate_dataset(
+            csv_path, model, sample_size=args.sample, seed=args.seed, dry_run=args.dry_run
+        )
 
     # Overall results table.
     print("\n\n================ RESULTS TABLE ================")
