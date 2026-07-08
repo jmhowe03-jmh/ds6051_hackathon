@@ -1,6 +1,10 @@
+import os
+# Reduce GPU memory fragmentation (must be set before torch initializes CUDA).
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import pandas as pd
 
-from classifier import PhishingClassifier
+from classifier import PhishingClassifier, load_base_model
 from improve_email import improve_email
 from judge_email import judge_email
 from metrics import compute_metrics, rule_compliance
@@ -20,14 +24,23 @@ def make_composite_email(row: dict) -> str:
     )
 
 
+# Proof of concept: only process the first N rows of each dataset.
+N_ROWS = 2
+
+
 def load_dataframes() -> dict[str, pd.DataFrame]:
     data_dir = Path(__file__).resolve().parent.parent / "results"
     names = ["CEAS_08", "Nazario", "Nigerian_Fraud", "SpamAssasin"]
-    return {name: pd.read_csv(data_dir / f"{name}_classified.csv") for name in names}
+    return {
+        name: pd.read_csv(data_dir / f"{name}_classified.csv").head(N_ROWS)
+        for name in names
+    }
 
 
 def main():
-    clf = PhishingClassifier()
+    # Load the model ONCE here, then pass it to every component.
+    model, processor = load_base_model()
+    clf = PhishingClassifier(model, processor)
     dfs = load_dataframes()
     results = []
 
@@ -50,7 +63,7 @@ def main():
                     break
                 passes += 1
                 print("improving... \n", end="", flush=True)
-                improved = improve_email(email)
+                improved = improve_email(email, model, processor)
                 print("metrics... \n", end="", flush=True)
                 metrics = compute_metrics(email, improved)
                 compliance = rule_compliance(original_email, improved)
@@ -70,7 +83,7 @@ def main():
                 email = improved
     
 
-            judge_scores = judge_email(original_email, email)
+            judge_scores = judge_email(original_email, email, model, processor)
             results.append({
                 "source": name,
                 "pass": passes,
